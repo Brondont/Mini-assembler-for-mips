@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
-
-#include "./parseFile.c";
+#include "parsefile.h"
 
 int main(int argc, char **argv)
 {
@@ -13,11 +12,11 @@ int main(int argc, char **argv)
   }
   int passTime = 0;
 
-  parse_file(file, passTime);
+  parseFile(file, passTime);
 
   passTime = 1;
 
-  rewind(file);
-  parse_file(file, passTime);
+  // rewind(file);
+  // parseFile(file, passTime);
   return 0;
 }
