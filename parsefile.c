@@ -52,14 +52,14 @@ char *parseInstruction(char *line)
   char *instruction = NULL;
   int length = 0;
 
-  // skips all the white space and updates line length
+  // storing the length of white space before instruction
   length = strspn(line, " \n\t");
 
   char *i = line + length; // pointer to the start of the instruction
 
   char *j = strpbrk(i, " \n\t"); // pointer to the end of the instruction
 
-  // TODO: handle comments and instruction inputs # this is a comment in assembly
+  // TODO: handle comments and opreands inputs # this is a comment in assembly
   //  might need a seperate function for them
   //
 
@@ -75,7 +75,7 @@ char *parseInstruction(char *line)
   return instruction;
 }
 
-void parseFile(FILE *file, int passTime)
+void parseFile(FILE *file, int passTime, int *status)
 {
   char line[MAX_LINE_LENGTH + 1];
   char *instruction = NULL;
@@ -97,12 +97,42 @@ void parseFile(FILE *file, int passTime)
     {
       if (!instruction || *instruction == '#')
         continue;
+      // check sections
       if (strcmp(instruction, ".text") == 0)
+      {
+        if (isTextSection)
+        {
+          printf("\n Can only have 1 .text section \n");
+          *status = 0;
+          return;
+        }
         isTextSection = 1;
+        continue;
+      }
       if (strcmp(instruction, ".data") == 0)
+      {
+        if (isDataSection)
+        {
+          printf("\n Can only have 1 .data section \n");
+          *status = 0;
+          return;
+        }
         isDataSection = 1;
+        continue;
+      }
+      if (isDataSection)
+      {
+        if (!strpbrk(instruction, ":"))
+        {
+          printf("\n Only variables can be declared in .data section. \n");
+          *status = 0;
+          return;
+        }
+      }
+      if (isTextSection)
+      {
+      }
     }
-    printf("%d %d", isDataSection, isTextSection);
   }
   return;
 }
