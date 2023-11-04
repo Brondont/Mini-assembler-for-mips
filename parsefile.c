@@ -47,31 +47,44 @@ struct
 } rInstruction[] = {
     {"add", "100000"}};
 
-char *parseInstruction(char *line)
+char *parseInstruction(char *line, char **instructionSet)
 {
   char *instruction = NULL;
-  int length = 0;
+  *instructionSet = NULL;
+  int instructionLength = 0;
+  int instructionSetLength = 0;
 
   // storing the length of white space before instruction
-  length = strspn(line, " \n\t");
+  instructionLength = strspn(line, " \n\t\0");
 
-  char *i = line + length; // pointer to the start of the instruction
+  char *i = line + instructionLength; // pointer to the start of the instruction
 
-  char *j = strpbrk(i, " \n\t"); // pointer to the end of the instruction
+  char *j = strpbrk(i, " #\n\t\0"); // pointer to the end of the instruction
 
-  // TODO: handle comments and opreands inputs # this is a comment in assembly
-  //  might need a seperate function for them
-  //
+  if (j != 0)
+  {
+    instructionSetLength = (line + strlen(line) - 1) - j;
+    if (instructionSetLength != 0)
+    {
+      *instructionSet = (char *)malloc(instructionSetLength);
+      if (*instructionSet)
+        strncpy(*instructionSet, j, instructionSetLength);
+      (*instructionSet)[instructionSetLength] = '\0';
+    }
+  }
 
   // Create instruction string
-  length = j - i;
-  instruction = (char *)malloc(length);
+  instructionLength = j - i;
+  if (instructionLength == 0)
+    return NULL;
+
+  instruction = (char *)malloc(instructionLength);
   if (!instruction)
     return NULL;
 
   // Copy the instruction into its variable
-  strncpy(instruction, i, length);
-  instruction[length] = '\0'; // Identify the end of the string
+  strncpy(instruction, i, instructionLength);
+  instruction[instructionLength] = '\0'; // Identify the end of the string
   return instruction;
 }
 
@@ -79,19 +92,34 @@ void parseFile(FILE *file, int passTime, int *status)
 {
   char line[MAX_LINE_LENGTH + 1];
   char *instruction = NULL;
+  char *instructionSet = NULL;
   int isDataSection = 0;
   int isTextSection = 0;
 
   // reading line by line
   while (fgets(line, sizeof(line), file))
   {
+    int lineLength = strlen(line);
+    if (lineLength == 0)
+      continue;
     // checking the line length
     if (strlen(line) == MAX_LINE_LENGTH)
     {
       printf("exceeded maximum line length.");
       return;
     }
-    instruction = parseInstruction(line);
+
+    // Handles last line issue
+    if (line[lineLength - 1] != '\n')
+    {
+      line[lineLength] = '\n';
+      line[lineLength + 1] = '\0';
+    }
+
+    instruction = parseInstruction(line, &instructionSet);
+
+    // printf("%s", line);
+    // printf("%s%s\n", instruction, instructionSet);
 
     if (passTime == 0)
     {
@@ -131,8 +159,17 @@ void parseFile(FILE *file, int passTime, int *status)
       }
       if (isTextSection)
       {
+        char *isLabel = strpbrk(instruction, ":");
+        if ()
+        {
+          printf("\n Can't have directives in the text section. \n");
+          *status = 0;
+          return;
+        }
       }
     }
+    free(instruction);
+    free(instructionSet);
   }
   return;
 }
