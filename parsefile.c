@@ -61,14 +61,16 @@ char *parseInstruction(char *line, char **instructionSet)
 
   char *j = strpbrk(i, " #\n\t\0"); // pointer to the end of the instruction
 
+  // works on returning the instruction set
   if (j != 0)
   {
-    instructionSetLength = (line + strlen(line) - 1) - j;
+    // still needs a rework
+    instructionSetLength = (line + strlen(line) - 1) - j - strspn(j, " ");
     if (instructionSetLength != 0)
     {
       *instructionSet = (char *)malloc(instructionSetLength);
       if (*instructionSet)
-        strncpy(*instructionSet, j, instructionSetLength);
+        strncpy(*instructionSet, j + strspn(j, " "), instructionSetLength);
       (*instructionSet)[instructionSetLength] = '\0';
     }
   }
@@ -118,8 +120,8 @@ void parseFile(FILE *file, int passTime, int *status)
 
     instruction = parseInstruction(line, &instructionSet);
 
-    // printf("%s", line);
-    // printf("%s%s\n", instruction, instructionSet);
+    printf("%s", line);
+    printf("%s %s\n", instruction, instructionSet);
 
     if (passTime == 0)
     {
@@ -128,23 +130,37 @@ void parseFile(FILE *file, int passTime, int *status)
       // check sections
       if (strcmp(instruction, ".text") == 0)
       {
+        if (instructionSet)
+        {
+          printf("incorrect Segment declaration");
+          *status = 0;
+          return;
+        }
         if (isTextSection)
         {
           printf("\n Can only have 1 .text section \n");
           *status = 0;
           return;
         }
+        isDataSection = 0;
         isTextSection = 1;
         continue;
       }
       if (strcmp(instruction, ".data") == 0)
       {
+        if (instructionSet)
+        {
+          printf("incorrect Segment declaration");
+          *status = 0;
+          return;
+        }
         if (isDataSection)
         {
           printf("\n Can only have 1 .data section \n");
           *status = 0;
           return;
         }
+        isTextSection = 0;
         isDataSection = 1;
         continue;
       }
@@ -160,7 +176,7 @@ void parseFile(FILE *file, int passTime, int *status)
       if (isTextSection)
       {
         char *isLabel = strpbrk(instruction, ":");
-        if ()
+        if (isLabel && instructionSet)
         {
           printf("\n Can't have directives in the text section. \n");
           *status = 0;
