@@ -2,4 +2,4 @@
 
 #include <stdio.h>
 
-void parseFile(FILE *file, int passTime, int *status);
+void parseFile(FILE *file, FILE *outFile, int passTime, int *status);

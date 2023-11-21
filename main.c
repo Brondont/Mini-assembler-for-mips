@@ -10,17 +10,24 @@ int main(int argc, char **argv)
     printf("\n failed to read file. \n");
     return -1;
   }
+
+  FILE *outFile = fopen("./mips1.txt", "w");
+  if (!outFile)
+  {
+    printf("\n failed to compile try again. \n");
+    return -2;
+  }
   int passTime = 0;
   int status = 1;
-  parseFile(file, passTime, &status);
+  parseFile(file, outFile, passTime, &status);
   if (!status)
   {
     printf("\n Failed to assemble file. \n");
-    return -1;
+    return -3;
   }
   passTime = 1;
 
-  // rewind(file);
-  // parseFile(file, passTime);
+  rewind(file);
+  parseFile(file, outFile, passTime, &status);
   return 0;
 }
