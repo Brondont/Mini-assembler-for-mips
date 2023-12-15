@@ -17,17 +17,22 @@ int main(int argc, char **argv)
     printf("\n failed to compile try again. \n");
     return -2;
   }
+
   int passTime = 0;
   int status = 1;
   parseFile(file, outFile, passTime, &status);
+
   if (!status)
   {
     printf("\n Failed to assemble file. \n");
     return -3;
   }
-  passTime = 1;
 
+  passTime = 1;
   rewind(file);
   parseFile(file, outFile, passTime, &status);
+
+  fclose(file);
+  fclose(outFile);
   return 0;
 }

@@ -57,7 +57,7 @@ struct
 
 struct
 {
-  const char *name;
+  char *name;
   char *op;
 } iInstructions[] = {
     {"lw", "100011"},
@@ -72,7 +72,7 @@ struct
 
 struct
 {
-  const char *name;
+  char *name;
   char *op;
 } jInstructions[] = {
     {"j", "000010"},
@@ -116,15 +116,19 @@ char instructionType(char *instruction)
 {
   if (!instruction)
     return 0;
+
   for (int i = 0; rInstructions[i].name; i++)
     if (strcmp(rInstructions[i].name, instruction) == 0)
       return 'r';
+
   for (int i = 0; iInstructions[i].name; i++)
     if (strcmp(iInstructions[i].name, instruction) == 0)
       return 'i';
+
   for (int i = 0; jInstructions[i].name; i++)
     if (strcmp(jInstructions[i].name, instruction) == 0)
       return 'j';
+
   return 0;
 }
 
@@ -137,6 +141,53 @@ char *registerAddress(char *regKey)
       return registerMap[i].address;
     }
   }
+  return "00000";
+}
+
+char *instructionAddress(char *instruction)
+{
+  for (int i = 0; rInstructions[i].name; i++)
+    if (strcmp(rInstructions[i].name, instruction) == 0)
+      return rInstructions[i].function;
+  for (int i = 0; iInstructions[i].name; i++)
+    if (strcmp(iInstructions[i].name, instruction) == 0)
+      return iInstructions[i].op;
+  for (int i = 0; jInstructions[i].name; i++)
+    if (strcmp(jInstructions[i].name, instruction) == 0)
+      return jInstructions[i].op;
+  return NULL;
+}
+
+void getBin(int num, char *string, int padding)
+{
+
+  *(string + padding) = '\0';
+
+  long pos;
+  if (padding == 5)
+    pos = 0x10;
+  else if (padding == 16)
+    pos = 0x8000;
+  else if (padding == 26)
+    pos = 0x2000000;
+  else if (padding == 32)
+    pos = 0x80000000;
+
+  long mask = pos << 1;
+  while (mask >>= 1)
+    *string++ = !!(mask & num) + '0';
+}
+
+void rFormat(char *instruction, char rs[5], char rt[5], char rd[5], int shamnt, FILE *outFile)
+{
+  char *opcode = "000000";
+  char *rsBin = registerAddress(rs);
+  char *rtBin = registerAddress(rt);
+  char *rdBin = registerAddress(rd);
+  char shamntBin[6];
+  getBin(shamnt, shamntBin, 5);
+  char *function = instructionAddress(instruction);
+  fprintf(outFile, "%s %s %s %s %s %s\n", opcode, rsBin, rtBin, rdBin, shamntBin, function);
 }
 
 void parseFile(FILE *file, FILE *outFile, int passTime, int *status)
@@ -150,30 +201,32 @@ void parseFile(FILE *file, FILE *outFile, int passTime, int *status)
 
   while (fgets(line, sizeof(line), file))
   {
+    if (instruction)
+      free(instruction);
+
     int lineLength = strlen(line);
-    programCounter++;
-    // checking the line length
-    if (strlen(line) == MAX_LINE_LENGTH + 1)
-    {
-      printf("\n exceeded maximum line length. \n at line: %d \n", programCounter);
-      *status = 0;
-      return;
-    }
 
     // Handles last line issue
-    if (line[lineLength - 1] != '\n')
+    if (lineLength > 0 && line[lineLength - 1] != '\n')
     {
       line[lineLength] = '\n';
       line[lineLength + 1] = '\0';
     }
-
-    instruction = parseInstruction(line, &instructionSet);
-
-    // printf("\n %s %s \n", instruction, instructionSet);
-
-    // check syntax
+    programCounter++;
+    // checking the line length
     if (passTime == 0)
     {
+      if (lineLength == MAX_LINE_LENGTH + 1)
+      {
+        printf("\n exceeded maximum line length. \n at line: %d \n", programCounter);
+        *status = 0;
+        return;
+      }
+
+      instruction = parseInstruction(line, &instructionSet);
+      // printf("\n %s %s \n", instruction, instructionSet);
+
+      // check syntax
       if (!instruction || *instruction == '#')
         continue;
       // check sections
@@ -213,6 +266,7 @@ void parseFile(FILE *file, FILE *outFile, int passTime, int *status)
         isDataSection = 1;
         continue;
       }
+
       if (isDataSection)
       {
         if (!strpbrk(instruction, ":"))
@@ -222,6 +276,7 @@ void parseFile(FILE *file, FILE *outFile, int passTime, int *status)
           return;
         }
       }
+
       if (isTextSection)
       {
         char *isLabel = strpbrk(instruction, ":");
@@ -231,7 +286,6 @@ void parseFile(FILE *file, FILE *outFile, int passTime, int *status)
           *status = 0;
           return;
         }
-        // is valid mnemonic
         if (!instructionType(instruction) && !isLabel)
         {
           *status = 0;
@@ -239,33 +293,37 @@ void parseFile(FILE *file, FILE *outFile, int passTime, int *status)
           return;
         }
       }
-
-      free(instruction);
-      free(instructionSet);
     }
-
     // start translating
     if (passTime == 1)
     {
       instruction = parseInstruction(line, &instructionSet);
-      if (!instruction)
+
+      if (!instruction || *instruction == '#')
+        continue;
+
+      char *isLabelOrData = strpbrk(instruction, ":");
+      if (isLabelOrData || strcmp(instruction, ".text") == 0 || strcmp(instruction, ".data") == 0)
         continue;
       char instType = instructionType(instruction);
-      // R format
+
+      // if R format
       if (instType == 'r')
       {
         // if r format of shape rd, rs, rt registers
         if (strcmp(instruction, "add") == 0 || strcmp(instruction, "sub") == 0 || strcmp(instruction, "and") == 0 || strcmp(instruction, "or") == 0 || strcmp(instruction, "slt") == 0)
         {
-          // extracting rd, rs, rt
-          char **registerKeys = NULL;
           char *key = NULL;
+
+          char keys[3][4];
+
           for (int i = 0; i < 3; i++)
           {
-            printf("\n instruction Set: %s\n", instructionSet);
             key = parseInstruction(instructionSet, &instructionSet);
-            printf("%s", registerAddress(key));
+            strcpy(keys[i], key);
+            free(key);
           }
+          rFormat(instruction, keys[1], keys[2], keys[0], 0, outFile);
         }
       }
     }
