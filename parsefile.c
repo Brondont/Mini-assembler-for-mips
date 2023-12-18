@@ -134,6 +134,10 @@ char instructionType(char *instruction)
 
 char *registerAddress(char *regKey)
 {
+  if (!regKey)
+  {
+    return "00000";
+  }
   for (int i = 0; registerMap[i].name; i++)
   {
     if (strcmp(regKey, registerMap[i].name) == 0)
@@ -146,6 +150,8 @@ char *registerAddress(char *regKey)
 
 char *instructionAddress(char *instruction)
 {
+  if (!instruction)
+    return NULL;
   for (int i = 0; rInstructions[i].name; i++)
     if (strcmp(rInstructions[i].name, instruction) == 0)
       return rInstructions[i].function;
@@ -213,9 +219,10 @@ void parseFile(FILE *file, FILE *outFile, int passTime, int *status)
       line[lineLength + 1] = '\0';
     }
     programCounter++;
-    // checking the line length
+
     if (passTime == 0)
     {
+      // checking the line length
       if (lineLength == MAX_LINE_LENGTH + 1)
       {
         printf("\n exceeded maximum line length. \n at line: %d \n", programCounter);
@@ -324,6 +331,21 @@ void parseFile(FILE *file, FILE *outFile, int passTime, int *status)
             free(key);
           }
           rFormat(instruction, keys[1], keys[2], keys[0], 0, outFile);
+        }
+        else
+        {
+          // instruction of type shift amount
+          char *key = NULL;
+
+          char keys[3][4];
+
+          for (int i = 0; i < 3; i++)
+          {
+            key = parseInstruction(instructionSet, &instructionSet);
+            strcpy(keys[i], key);
+            free(key);
+          }
+          rFormat(instruction, keys[1], keys[0], NULL, atoi(keys[2]), outFile);
         }
       }
     }
