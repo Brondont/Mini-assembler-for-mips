@@ -4,6 +4,7 @@
 
 int main(int argc, char **argv)
 {
+  label labels[100];
   FILE *file = fopen("./mips1.asm", "r");
   if (!file)
   {
@@ -20,7 +21,7 @@ int main(int argc, char **argv)
 
   int passTime = 0;
   int status = 1;
-  parseFile(file, outFile, passTime, &status);
+  parseFile(file, outFile, passTime, labels, &status);
 
   if (!status)
   {
@@ -30,7 +31,7 @@ int main(int argc, char **argv)
 
   passTime = 1;
   rewind(file);
-  parseFile(file, outFile, passTime, &status);
+  parseFile(file, outFile, passTime, labels, &status);
 
   fclose(file);
   fclose(outFile);

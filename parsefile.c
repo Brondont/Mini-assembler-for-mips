@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <stdint.h>
 
 #include "parsefile.h"
 
@@ -51,7 +52,6 @@ struct
     {"or", "100101"},
     {"sll", "000000"},
     {"slt", "101010"},
-    {"srl", "000010"},
     {"jr", "001000"},
     {NULL, 0}};
 
@@ -64,7 +64,6 @@ struct
     {"sw", "101011"},
     {"andi", "001100"},
     {"ori", "001101"},
-    {"lui", "001111"},
     {"beq", "000100"},
     {"slti", "001010"},
     {"addi", "001000"},
@@ -91,11 +90,11 @@ char *parseInstruction(char *line, char **instructionSet)
 
   char *i = line + instructionLength; // pointer to the start of the instruction
 
-  char *j = strpbrk(i, " \n#,\t\0"); // pointer to the end of the instruction
+  char *j = strpbrk(i, " \n#,()\t\0"); // pointer to the end of the instruction
 
   // point to the rest of the string
   if (j)
-    *instructionSet = strpbrk(j, ".$,");
+    *instructionSet = strpbrk(j, ".$,\"-0123456789");
 
   // Create instruction string
   instructionLength = j - i;
@@ -164,6 +163,20 @@ char *instructionAddress(char *instruction)
   return NULL;
 }
 
+int labelAddress(label labels[100], char *desiredLabel)
+{
+  if (!desiredLabel)
+    return 0;
+  for (int i = 0; labels[i].label[0] != '\0'; i++)
+  {
+    if (strcmp(labels[i].label, desiredLabel) == 0)
+    {
+      return labels[i].address;
+    }
+  }
+  return 0;
+}
+
 void getBin(int num, char *string, int padding)
 {
 
@@ -196,14 +209,26 @@ void rFormat(char *instruction, char rs[5], char rt[5], char rd[5], int shamnt, 
   fprintf(outFile, "%s %s %s %s %s %s\n", opcode, rsBin, rtBin, rdBin, shamntBin, function);
 }
 
-void parseFile(FILE *file, FILE *outFile, int passTime, int *status)
+void iFormat(char *instruction, char rs[5], char rt[5], int immediate, FILE *outFile)
+{
+  char *rsBin = registerAddress(rs);
+  char *rtBin = registerAddress(rt);
+  char immediateBin[17];
+  getBin(immediate, immediateBin, 16);
+  char *codeOp = instructionAddress(instruction);
+  fprintf(outFile, "%s %s %s %s\n", codeOp, rsBin, rtBin, immediateBin);
+}
+
+void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *status)
 {
   char line[MAX_LINE_LENGTH + 1];
   char *instruction = NULL;
   char *instructionSet = NULL;
   int isDataSection = 0;
   int isTextSection = 0;
-  int programCounter = 0;
+  int lineNumber = 0;
+  int labelIndex = 0;
+  int programCounter = 0x00400000;
 
   while (fgets(line, sizeof(line), file))
   {
@@ -218,59 +243,64 @@ void parseFile(FILE *file, FILE *outFile, int passTime, int *status)
       line[lineLength] = '\n';
       line[lineLength + 1] = '\0';
     }
-    programCounter++;
 
+    lineNumber++;
+
+    // check syntax lexical..
     if (passTime == 0)
     {
       // checking the line length
       if (lineLength == MAX_LINE_LENGTH + 1)
       {
-        printf("\n exceeded maximum line length. \n at line: %d \n", programCounter);
+        printf("\n exceeded maximum line length. \n at line: %d \n", lineNumber);
         *status = 0;
         return;
       }
 
       instruction = parseInstruction(line, &instructionSet);
-      // printf("\n %s %s \n", instruction, instructionSet);
+      // printf("\n %s %x\n", instruction, programCounter);
 
       // check syntax
       if (!instruction || *instruction == '#')
         continue;
+
       // check sections
       if (strcmp(instruction, ".text") == 0)
       {
         if (instructionSet)
         {
-          printf("\n incorrect Segment declaration \n at line: %d \n", programCounter);
+          printf("\n incorrect Segment declaration \n at line: %d \n", lineNumber);
           *status = 0;
           return;
         }
         if (isTextSection)
         {
-          printf("\n Can only have 1 .text section \n at line: %d \n", programCounter);
+          printf("\n Can only have 1 .text section \n at line: %d \n", lineNumber);
           *status = 0;
           return;
         }
         isDataSection = 0;
         isTextSection = 1;
+        programCounter = 0x00400000;
         continue;
       }
-      if (strcmp(instruction, ".data") == 0)
+      else if (strcmp(instruction, ".data") == 0)
       {
         if (instructionSet)
         {
-          printf("\n incorrect Segment declaration \n at line: %d \n", programCounter);
+          printf("\n incorrect Segment declaration \n at line: %d \n", lineNumber);
           *status = 0;
           return;
         }
         if (isDataSection)
         {
-          printf("\n Can only have 1 .data section \n at line: %d", programCounter);
+          printf("\n Can only have 1 .data section \n at line: %d", lineNumber);
           *status = 0;
           return;
         }
         isTextSection = 0;
         isDataSection = 1;
+        programCounter = 0x10010000;
         continue;
       }
 
@@ -278,27 +308,67 @@ void parseFile(FILE *file, FILE *outFile, int passTime, int *status)
       {
         if (!strpbrk(instruction, ":"))
         {
-          printf("\n Only variables can be declared in .data section. \n at line: %d \n", programCounter);
+          printf("\n Only variables can be declared in .data section. \n at line: %d \n", lineNumber);
           *status = 0;
           return;
+        }
+        else
+        {
+          const int instructionSize = strlen(instruction);
+          char label[instructionSize];
+          strcpy(label, instruction);
+          label[instructionSize - 1] = '\0';
+          strcpy(labels[labelIndex].label, label);
+          labels[labelIndex].address = programCounter;
+          // extract directive from data label and size will be in instructionSet
+          char *directive = parseInstruction(instructionSet, &instructionSet);
+          if (strcmp(directive, ".word") == 0)
+          {
+            int size = atoi(instructionSet);
+            programCounter += size * 4;
+          }
+          else if (strcmp(directive, ".asciiz") == 0)
+          {
+            int size = strlen(instructionSet) - 3; // -3 for new line character and " "
+            programCounter += size - 1;
+          }
+          labelIndex++;
+          // set end of array
+          labels[labelIndex].label[0] = '\0';
         }
       }
-
-      if (isTextSection)
+      else if (isTextSection)
       {
         char *isLabel = strpbrk(instruction, ":");
-        if (isLabel && instructionSet)
+        if (isLabel)
         {
-          printf("\n Can't have directives in the text section. \n at line: %d \n", programCounter);
+          if (instructionSet)
+          {
+            printf("\n Can't have directives in the text section. \n at line: %d \n", lineNumber);
+            *status = 0;
+            return;
+          }
+          // add labels
+          const int instructionSize = strlen(instruction);
+          char label[instructionSize];
+          strcpy(label, instruction);
+          label[instructionSize - 1] = '\0';
+          strcpy(labels[labelIndex].label, label);
+          labels[labelIndex].address = programCounter - 4;
+          labelIndex++;
+          // set end of array
+          labels[labelIndex].label[0] = '\0';
+        }
+        if ((!instructionType(instruction) && strcmp(instruction, "la") != 0) && !isLabel)
+        {
           *status = 0;
+          printf("\n invalid instruction type: \"%s\" \n at line: %d \n", instruction, lineNumber);
           return;
         }
-        if (!instructionType(instruction) && !isLabel)
-        {
-          *status = 0;
-          printf("\n invalid instruction type: \"%s\" \n at line: %d \n", instruction, programCounter);
-          return;
-        }
+        if (strcmp(instruction, "la") == 0)
+          programCounter += 8;
+        else
+          programCounter += 4;
       }
     }
     // start translating
@@ -348,6 +418,63 @@ void parseFile(FILE *file, FILE *outFile, int passTime, int *status)
           rFormat(instruction, keys[1], keys[0], NULL, atoi(keys[2]), outFile);
         }
       }
+      else if (instType == 'i')
+      {
+        // type rt rs immediate
+        if (strcmp(instruction, "andi") == 0 || strcmp(instruction, "ori") == 0 || strcmp(instruction, "slti") == 0 || strcmp(instruction, "addi") == 0)
+        {
+          char *key = NULL;
+
+          char keys[3][4];
+
+          for (int i = 0; i < 3; i++)
+          {
+            key = parseInstruction(instructionSet, &instructionSet);
+            strcpy(keys[i], key);
+            free(key);
+          }
+          iFormat(instruction, keys[1], keys[0], atoi(keys[2]), outFile);
+        }
+        // type rt immediate rs
+        else if (strcmp(instruction, "lw") == 0 || strcmp(instruction, "sw") == 0)
+        {
+          char *key = NULL;
+
+          char keys[3][4];
+
+          for (int i = 0; i < 3; i++)
+          {
+            key = parseInstruction(instructionSet, &instructionSet);
+            strcpy(keys[i], key);
+            free(key);
+          }
+          iFormat(instruction, keys[0], keys[2], atoi(keys[1]), outFile);
+        }
+        // rs, rt, label
+        else if (strcmp(instruction, "beq") == 0)
+        {
+          char *key = NULL;
+
+          char keys[3][MAX_LINE_LENGTH];
+
+          for (int i = 0; i < 3; i++)
+          {
+            key = parseInstruction(instructionSet, &instructionSet);
+            strcpy(keys[i], key);
+            free(key);
+          }
+          iFormat(instruction, keys[1], keys[0], labelAddress(labels, keys[2]) - programCounter - 4, outFile);
+        }
+      }
+      else if (instType == 'j')
+      {
+        // continue for j type
+      }
+
+      if (strcmp(instruction, "la") == 0)
+        programCounter += 8;
+      else
+        programCounter += 4;
     }
   }
   return;
