@@ -67,6 +67,8 @@ struct
     {"beq", "000100"},
     {"slti", "001010"},
     {"addi", "001000"},
+    {"lui", "001111"},
+    {"la", 0},
     {NULL, 0}};
 
 struct
@@ -179,10 +181,9 @@ int labelAddress(label labels[100], char *desiredLabel)
 
 void getBin(int num, char *string, int padding)
 {
-
   *(string + padding) = '\0';
 
-  long pos;
+  long long pos;
   if (padding == 5)
     pos = 0x10;
   else if (padding == 16)
@@ -192,9 +193,44 @@ void getBin(int num, char *string, int padding)
   else if (padding == 32)
     pos = 0x80000000;
 
-  long mask = pos << 1;
-  while (mask >>= 1)
+  long long mask = pos;
+  while (mask > 0)
+  {
     *string++ = !!(mask & num) + '0';
+    mask >>= 1;
+  }
+}
+
+int getDec(char *bin)
+{
+
+  int b, k, m, n;
+  int len, sum = 0;
+
+  // Length - 1 to accomodate for null terminator
+  len = strlen(bin) - 1;
+
+  // Iterate the string
+  for (k = 0; k <= len; k++)
+  {
+
+    // Convert char to numeric value
+    n = (bin[k] - '0');
+
+    // Check the character is binary
+    if ((n > 1) || (n < 0))
+    {
+      return 0;
+    }
+
+    for (b = 1, m = len; m > k; m--)
+      b *= 2;
+
+    // sum it up
+    sum = sum + n * b;
+  }
+
+  return sum;
 }
 
 void rFormat(char *instruction, char rs[5], char rt[5], char rd[5], int shamnt, FILE *outFile)
@@ -324,12 +360,15 @@ void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *
           char *directive = parseInstruction(instructionSet, &instructionSet);
           if (strcmp(directive, ".word") == 0)
           {
-            int size = atoi(instructionSet);
-            programCounter += size * 4;
+            // increment program counter till we run out of .words (for arrays)
+            while (instructionSet && parseInstruction(instructionSet, &instructionSet))
+            {
+              programCounter += 4;
+            }
           }
           else if (strcmp(directive, ".asciiz") == 0)
           {
-            int size = strlen(instructionSet) - 3; // -3 for new line character and " "
+            int size = strlen(instructionSet) - 3; // -3 for new line character and " " that are stored in instructionSet
             programCounter += size - 1;
           }
           labelIndex++;
@@ -354,7 +393,7 @@ void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *
           strcpy(label, instruction);
           label[instructionSize - 1] = '\0';
           strcpy(labels[labelIndex].label, label);
-          labels[labelIndex].address = programCounter - 4;
+          labels[labelIndex].address = programCounter;
           labelIndex++;
           // set end of array
           labels[labelIndex].label[0] = '\0';
@@ -365,6 +404,7 @@ void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *
           printf("\n invalid instruction type: \"%s\" \n at line: %d \n", instruction, lineNumber);
           return;
         }
+
         if (strcmp(instruction, "la") == 0)
           programCounter += 8;
         else
@@ -379,9 +419,24 @@ void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *
       if (!instruction || *instruction == '#')
         continue;
 
-      char *isLabelOrData = strpbrk(instruction, ":");
-      if (isLabelOrData || strcmp(instruction, ".text") == 0 || strcmp(instruction, ".data") == 0)
+      // Getting to .text section
+      if (strcmp(instruction, ".text") == 0)
+      {
+        isTextSection = 1;
         continue;
+      }
+      if (!isTextSection)
+        continue;
+
+      if (strcmp(instruction, ".data") == 0)
+        break;
+
+      // Don't translate labels and increment programCounter accordingly
+      if (strpbrk(instruction, ":"))
+      {
+        programCounter += 4;
+        continue;
+      }
       char instType = instructionType(instruction);
 
       // if R format
@@ -448,9 +503,9 @@ void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *
             strcpy(keys[i], key);
             free(key);
           }
-          iFormat(instruction, keys[0], keys[2], atoi(keys[1]), outFile);
+          iFormat(instruction, keys[2], keys[0], atoi(keys[1]), outFile);
         }
-        // rs, rt, label
+        // type rs rt label
         else if (strcmp(instruction, "beq") == 0)
         {
           char *key = NULL;
@@ -463,7 +518,36 @@ void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *
             strcpy(keys[i], key);
             free(key);
           }
-          iFormat(instruction, keys[1], keys[0], labelAddress(labels, keys[2]) - programCounter - 4, outFile);
+          iFormat(instruction, keys[0], keys[1], (labelAddress(labels, keys[2]) - programCounter - 8) / 4, outFile);
+        }
+        // pseudo code instruction
+        else if (strcmp(instruction, "la") == 0)
+        {
+          char *key = NULL;
+
+          char keys[2][MAX_LINE_LENGTH];
+
+          for (int i = 0; i < 2; i++)
+          {
+            key = parseInstruction(instructionSet, &instructionSet);
+            strcpy(keys[i], key);
+            free(key);
+          }
+          int variableAddress = labelAddress(labels, keys[1]);
+          char variableAddressBinary[33];
+          getBin(variableAddress, variableAddressBinary, 32);
+
+          char upperBits[17];
+          char lowerBits[17];
+
+          strncpy(lowerBits, variableAddressBinary, 16);
+          strncpy(upperBits, variableAddressBinary + 16, 16);
+
+          int immediate = getDec(lowerBits);
+          iFormat("lui", "00000", "$at", immediate, outFile);
+
+          immediate = getDec(upperBits);
+          iFormat("ori", "$at", keys[0], immediate, outFile);
         }
       }
       else if (instType == 'j')
