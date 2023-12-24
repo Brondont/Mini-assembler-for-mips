@@ -39,6 +39,7 @@ struct
     {"$s7", "10111"},
     {"$t8", "11000"},
     {"$t9", "11001"},
+    {"$ra", "11111"},
     {NULL, 0}};
 
 struct
@@ -96,7 +97,7 @@ char *parseInstruction(char *line, char **instructionSet)
 
   // point to the rest of the string
   if (j)
-    *instructionSet = strpbrk(j, ".$,\"-0123456789");
+    *instructionSet = strpbrk(j, " .$,\"-0123456789");
 
   // Create instruction string
   instructionLength = j - i;
@@ -242,7 +243,7 @@ void rFormat(char *instruction, char rs[5], char rt[5], char rd[5], int shamnt, 
   char shamntBin[6];
   getBin(shamnt, shamntBin, 5);
   char *function = instructionAddress(instruction);
-  fprintf(outFile, "%s %s %s %s %s %s\n", opcode, rsBin, rtBin, rdBin, shamntBin, function);
+  fprintf(outFile, "\t\t%s %s %s %s %s %s\n", opcode, rsBin, rtBin, rdBin, shamntBin, function);
 }
 
 void iFormat(char *instruction, char rs[5], char rt[5], int immediate, FILE *outFile)
@@ -252,7 +253,15 @@ void iFormat(char *instruction, char rs[5], char rt[5], int immediate, FILE *out
   char immediateBin[17];
   getBin(immediate, immediateBin, 16);
   char *codeOp = instructionAddress(instruction);
-  fprintf(outFile, "%s %s %s %s\n", codeOp, rsBin, rtBin, immediateBin);
+  fprintf(outFile, "\t\t%s %s %s %s\n", codeOp, rsBin, rtBin, immediateBin);
+}
+
+void jFormat(char *instruction, int immediate, FILE *outFile)
+{
+  char *opCode = instructionAddress(instruction);
+  char immediateBin[27];
+  getBin(immediate, immediateBin, 26);
+  fprintf(outFile, "\t\t%s %s\n", opCode, immediateBin);
 }
 
 void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *status)
@@ -438,7 +447,7 @@ void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *
         continue;
       }
       char instType = instructionType(instruction);
-
+      fprintf(outFile, "0x%x: ", programCounter);
       // if R format
       if (instType == 'r')
       {
@@ -457,9 +466,10 @@ void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *
           }
           rFormat(instruction, keys[1], keys[2], keys[0], 0, outFile);
         }
-        else
+        // instruction of type shift amount
+        else if (strcmp(instruction, "sll") == 0 || strcmp(instruction, "srl") == 0)
         {
-          // instruction of type shift amount
+
           char *key = NULL;
 
           char keys[3][4];
@@ -471,6 +481,12 @@ void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *
             free(key);
           }
           rFormat(instruction, keys[1], keys[0], NULL, atoi(keys[2]), outFile);
+        }
+        else if (strcmp(instruction, "jr") == 0)
+        {
+          char *key = parseInstruction(instructionSet, &instructionSet);
+          rFormat(instruction, key, "00000", "00000", 0, outFile);
+          free(key);
         }
       }
       else if (instType == 'i')
@@ -533,30 +549,38 @@ void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *
             strcpy(keys[i], key);
             free(key);
           }
+
           int variableAddress = labelAddress(labels, keys[1]);
           char variableAddressBinary[33];
           getBin(variableAddress, variableAddressBinary, 32);
-
           char upperBits[17];
           char lowerBits[17];
 
           strncpy(lowerBits, variableAddressBinary, 16);
           strncpy(upperBits, variableAddressBinary + 16, 16);
+          upperBits[16] = '\0';
+          lowerBits[16] = '\0';
 
           int immediate = getDec(lowerBits);
           iFormat("lui", "00000", "$at", immediate, outFile);
 
+          fprintf(outFile, "0x%x: ", programCounter + 4);
           immediate = getDec(upperBits);
           iFormat("ori", "$at", keys[0], immediate, outFile);
         }
       }
       else if (instType == 'j')
       {
-        // continue for j type
+        char *key = parseInstruction(instructionSet, &instructionSet);
+        int addressLabel = labelAddress(labels, key);
+        jFormat(instruction, addressLabel, outFile);
+        free(key);
       }
 
       if (strcmp(instruction, "la") == 0)
+      {
         programCounter += 8;
+      }
       else
         programCounter += 4;
     }
