@@ -1,0 +1,8 @@
+A simple Mini-Assembler.
+
+To run the code download the files from the repo and then in the command prompt
+execute "make" to compile the code (or compile it any other way you know), after that
+run the code in this format ./main (mips filename).asm
+
+Got alot of help from this repo:
+https://github.com/nayefc/mips-assembler

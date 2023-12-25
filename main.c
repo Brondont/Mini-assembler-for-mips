@@ -4,15 +4,21 @@
 
 int main(int argc, char **argv)
 {
+  if (argc <= 1)
+  {
+    printf("\n Wrong input format. \n ./main (mipsfilename).asm \n");
+    return -1;
+  }
+
   label labels[100];
-  FILE *file = fopen("./mips1.asm", "r");
+  FILE *file = fopen(argv[1], "r");
   if (!file)
   {
     printf("\n failed to read file. \n");
     return -1;
   }
 
-  FILE *outFile = fopen("./mips1.txt", "w");
+  FILE *outFile = fopen("./assembledCode.txt", "w");
   if (!outFile)
   {
     printf("\n failed to compile try again. \n");
