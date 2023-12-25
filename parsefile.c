@@ -204,7 +204,6 @@ void getBin(int num, char *string, int padding)
 
 int getDec(char *bin)
 {
-
   int b, k, m, n;
   int len, sum = 0;
 
@@ -234,16 +233,51 @@ int getDec(char *bin)
   return sum;
 }
 
+char *binaryToHex(char *binString)
+{
+  if (!binString)
+    return NULL;
+
+  int binStringLength = strlen(binString);
+
+  if (binStringLength % 4 != 0)
+    return NULL;
+
+  char *hexString = (char *)malloc(binStringLength / 4 + 1);
+  hexString[binStringLength / 4] = '\0';
+
+  for (int i = 0, j = 0; i < binStringLength; i += 4, j++)
+  {
+    char hexDigit = 0;
+    for (int k = 0; k < 4; k++)
+    {
+      hexDigit = (hexDigit << 1) | (binString[i + k] - '0');
+    }
+    hexString[j] = (hexDigit < 10) ? (hexDigit + '0') : (hexDigit - 10 + 'A');
+  }
+  return hexString;
+}
+
 void rFormat(char *instruction, char rs[5], char rt[5], char rd[5], int shamnt, FILE *outFile)
 {
-  char *opcode = "000000";
+  char *opCode = "000000";
   char *rsBin = registerAddress(rs);
   char *rtBin = registerAddress(rt);
   char *rdBin = registerAddress(rd);
   char shamntBin[6];
   getBin(shamnt, shamntBin, 5);
   char *function = instructionAddress(instruction);
-  fprintf(outFile, "\t\t%s %s %s %s %s %s\n", opcode, rsBin, rtBin, rdBin, shamntBin, function);
+  char *machineCode = (char *)malloc(33);
+  strcpy(machineCode, opCode);
+  strcat(machineCode, rsBin);
+  strcat(machineCode, rtBin);
+  strcat(machineCode, rdBin);
+  strcat(machineCode, shamntBin);
+  strcat(machineCode, function);
+  char *hexMachineCode = binaryToHex(machineCode);
+  free(machineCode);
+  fprintf(outFile, "\t\t0x%s\n", hexMachineCode);
+  free(hexMachineCode);
 }
 
 void iFormat(char *instruction, char rs[5], char rt[5], int immediate, FILE *outFile)
@@ -253,19 +287,34 @@ void iFormat(char *instruction, char rs[5], char rt[5], int immediate, FILE *out
   char immediateBin[17];
   getBin(immediate, immediateBin, 16);
   char *codeOp = instructionAddress(instruction);
-  fprintf(outFile, "\t\t%s %s %s %s\n", codeOp, rsBin, rtBin, immediateBin);
+  char *machineCode = (char *)malloc(33);
+  strcpy(machineCode, codeOp);
+  strcat(machineCode, rsBin);
+  strcat(machineCode, rtBin);
+  strcat(machineCode, immediateBin);
+  char *hexMachineCode = binaryToHex(machineCode);
+  free(machineCode);
+  fprintf(outFile, "\t\t0x%s\n", hexMachineCode);
+  free(hexMachineCode);
 }
 
 void jFormat(char *instruction, int immediate, FILE *outFile)
 {
-  char *opCode = instructionAddress(instruction);
+  char *codeOp = instructionAddress(instruction);
   char immediateBin[27];
   getBin(immediate, immediateBin, 26);
-  fprintf(outFile, "\t\t%s %s\n", opCode, immediateBin);
+  char *machineCode = (char *)malloc(33);
+  strcpy(machineCode, codeOp);
+  strcat(machineCode, immediateBin);
+  char *hexMachineCode = binaryToHex(machineCode);
+  free(machineCode);
+  fprintf(outFile, "\t\t0x%s\n", hexMachineCode);
+  free(hexMachineCode);
 }
 
 void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *status)
 {
+
   char line[MAX_LINE_LENGTH + 1];
   char *instruction = NULL;
   char *instructionSet = NULL;
@@ -351,7 +400,8 @@ void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *
 
       if (isDataSection)
       {
-        if (!strpbrk(instruction, ":"))
+        char *isLabel = strpbrk(instruction, ":");
+        if (!isLabel)
         {
           printf("\n Only variables can be declared in .data section. \n at line: %d \n", lineNumber);
           *status = 0;
@@ -359,11 +409,7 @@ void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *
         }
         else
         {
-          const int instructionSize = strlen(instruction);
-          char label[instructionSize];
-          strcpy(label, instruction);
-          label[instructionSize - 1] = '\0';
-          strcpy(labels[labelIndex].label, label);
+          strncpy(labels[labelIndex].label, instruction, isLabel - instruction);
           labels[labelIndex].address = programCounter;
           // extract directive from data label and size will be in instructionSet
           char *directive = parseInstruction(instructionSet, &instructionSet);
@@ -396,12 +442,8 @@ void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *
             *status = 0;
             return;
           }
-          // add labels
-          const int instructionSize = strlen(instruction);
-          char label[instructionSize];
-          strcpy(label, instruction);
-          label[instructionSize - 1] = '\0';
-          strcpy(labels[labelIndex].label, label);
+          // add labels (we use strncpy to get rid of the : in the label)
+          strncpy(labels[labelIndex].label, instruction, isLabel - instruction);
           labels[labelIndex].address = programCounter;
           labelIndex++;
           // set end of array
@@ -553,6 +595,8 @@ void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *
           int variableAddress = labelAddress(labels, keys[1]);
           char variableAddressBinary[33];
           getBin(variableAddress, variableAddressBinary, 32);
+
+          // I have to do this or otherwise it wont work and i dont understand why
           char upperBits[17];
           char lowerBits[17];
 
@@ -561,10 +605,14 @@ void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *
           upperBits[16] = '\0';
           lowerBits[16] = '\0';
 
+          // lui gets the lowerbits
           int immediate = getDec(lowerBits);
           iFormat("lui", "00000", "$at", immediate, outFile);
 
+          // printing address to the file for visuals
           fprintf(outFile, "0x%x: ", programCounter + 4);
+
+          // ori gets the upperbits
           immediate = getDec(upperBits);
           iFormat("ori", "$at", keys[0], immediate, outFile);
         }
