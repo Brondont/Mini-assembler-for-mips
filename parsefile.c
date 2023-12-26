@@ -97,7 +97,7 @@ char *parseInstruction(char *line, char **instructionSet)
 
   // point to the rest of the string
   if (j)
-    *instructionSet = strpbrk(j, " .$,\"-0123456789");
+    *instructionSet = strpbrk(j, "#.$,\"-0123456789 ");
 
   // Create instruction string
   instructionLength = j - i;
@@ -352,9 +352,7 @@ void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *
       }
 
       instruction = parseInstruction(line, &instructionSet);
-      // printf("\n %s %x\n", instruction, programCounter);
 
-      // check syntax
       if (!instruction || *instruction == '#')
         continue;
 
@@ -363,9 +361,17 @@ void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *
       {
         if (instructionSet)
         {
-          printf("\n incorrect Segment declaration \n at line: %d \n", lineNumber);
-          *status = 0;
-          return;
+          for (int i = 0; instructionSet[i] != '\0'; i++)
+          {
+            if (instructionSet[i] == '#')
+              break;
+            if (isalpha(instructionSet[i]))
+            {
+              printf("\n incorrect Segment declaration \n at line: %d \n", lineNumber);
+              *status = 0;
+              return;
+            }
+          }
         }
         if (isTextSection)
         {
@@ -382,9 +388,17 @@ void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *
       {
         if (instructionSet)
         {
-          printf("\n incorrect Segment declaration \n at line: %d \n", lineNumber);
-          *status = 0;
-          return;
+          for (int i = 0; instructionSet[i] != '\0'; i++)
+          {
+            if (instructionSet[i] == '#')
+              break;
+            if (isalpha(instructionSet[i]))
+            {
+              printf("\n incorrect Segment declaration \n at line: %d \n", lineNumber);
+              *status = 0;
+              return;
+            }
+          }
         }
         if (isDataSection)
         {
@@ -409,6 +423,7 @@ void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *
         }
         else
         {
+          // is variable add it to the map
           strncpy(labels[labelIndex].label, instruction, isLabel - instruction);
           labels[labelIndex].address = programCounter;
           // extract directive from data label and size will be in instructionSet
@@ -424,7 +439,7 @@ void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *
           else if (strcmp(directive, ".asciiz") == 0)
           {
             char *data = parseInstruction(instructionSet, &instructionSet);
-            int size = strlen(data) - 2; // -2 for new line character and " " that are stored in instructionSet
+            int size = strlen(data) - 2; // -3 for new line character and " " that are stored in instructionSet turns into -2 after adding in NULL character
             programCounter += size + 1;
           }
           labelIndex++;
@@ -439,11 +454,19 @@ void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *
         {
           if (instructionSet)
           {
-            printf("\n Can't have directives in the text section. \n at line: %d \n", lineNumber);
-            *status = 0;
-            return;
+            for (int i = 0; instructionSet[i] != '\0'; i++)
+            {
+              if (instructionSet[i] == '#')
+                break;
+              if (isalpha(instructionSet[i]))
+              {
+                printf("\n Can't have directives for labels in the text section. \n at line: %d \n", lineNumber);
+                *status = 0;
+                return;
+              }
+            }
           }
-          // add labels (we use strncpy to get rid of the : in the label)
+          // is label add it to the map
           strncpy(labels[labelIndex].label, instruction, isLabel - instruction);
           labels[labelIndex].address = programCounter;
           labelIndex++;
@@ -452,17 +475,17 @@ void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *
         }
         else
         {
+          if ((!instructionType(instruction) != 0 && strcmp(instruction, "syscall") != 0))
+          {
+            *status = 0;
+            printf("\n invalid instruction type: \"%s\" \n at line: %d \n", instruction, lineNumber);
+            return;
+          }
+
           if (strcmp(instruction, "la") == 0)
             programCounter += 8;
           else
             programCounter += 4;
-        }
-
-        if ((!instructionType(instruction) && strcmp(instruction, "la") != 0 && strcmp(instruction, "syscall") != 0) && !isLabel)
-        {
-          *status = 0;
-          printf("\n invalid instruction type: \"%s\" \n at line: %d \n", instruction, lineNumber);
-          return;
         }
       }
     }
