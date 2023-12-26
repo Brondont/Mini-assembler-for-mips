@@ -48,7 +48,7 @@ struct
   char *function;
 } rInstructions[] = {
     {"add", "100000"},
-    {"sub", "100001"},
+    {"sub", "100010"},
     {"and", "100100"},
     {"or", "100101"},
     {"sll", "000000"},
@@ -423,8 +423,9 @@ void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *
           }
           else if (strcmp(directive, ".asciiz") == 0)
           {
-            int size = strlen(instructionSet) - 3; // -3 for new line character and " " that are stored in instructionSet
-            programCounter += size - 1;
+            char *data = parseInstruction(instructionSet, &instructionSet);
+            int size = strlen(data) - 2; // -2 for new line character and " " that are stored in instructionSet
+            programCounter += size + 1;
           }
           labelIndex++;
           // set end of array
@@ -449,17 +450,20 @@ void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *
           // set end of array
           labels[labelIndex].label[0] = '\0';
         }
-        if ((!instructionType(instruction) && strcmp(instruction, "la") != 0) && !isLabel)
+        else
+        {
+          if (strcmp(instruction, "la") == 0)
+            programCounter += 8;
+          else
+            programCounter += 4;
+        }
+
+        if ((!instructionType(instruction) && strcmp(instruction, "la") != 0 && strcmp(instruction, "syscall") != 0) && !isLabel)
         {
           *status = 0;
           printf("\n invalid instruction type: \"%s\" \n at line: %d \n", instruction, lineNumber);
           return;
         }
-
-        if (strcmp(instruction, "la") == 0)
-          programCounter += 8;
-        else
-          programCounter += 4;
       }
     }
     // start translating
@@ -482,12 +486,9 @@ void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *
       if (strcmp(instruction, ".data") == 0)
         break;
 
-      // Don't translate labels and increment programCounter accordingly
       if (strpbrk(instruction, ":"))
-      {
-        programCounter += 4;
         continue;
-      }
+
       char instType = instructionType(instruction);
       fprintf(outFile, "0x%x: ", programCounter);
       // if R format
@@ -522,7 +523,7 @@ void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *
             strcpy(keys[i], key);
             free(key);
           }
-          rFormat(instruction, keys[1], keys[0], NULL, atoi(keys[2]), outFile);
+          rFormat(instruction, NULL, keys[1], keys[0], atoi(keys[2]), outFile);
         }
         else if (strcmp(instruction, "jr") == 0)
         {
@@ -531,6 +532,7 @@ void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *
           free(key);
         }
       }
+      // if I format
       else if (instType == 'i')
       {
         // type rt rs immediate
@@ -576,7 +578,7 @@ void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *
             strcpy(keys[i], key);
             free(key);
           }
-          iFormat(instruction, keys[0], keys[1], (labelAddress(labels, keys[2]) - programCounter - 8) / 4, outFile);
+          iFormat(instruction, keys[0], keys[1], (labelAddress(labels, keys[2]) - programCounter - 4) / 4, outFile);
         }
         // pseudo code instruction
         else if (strcmp(instruction, "la") == 0)
@@ -600,35 +602,39 @@ void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *
           char upperBits[17];
           char lowerBits[17];
 
-          strncpy(lowerBits, variableAddressBinary, 16);
-          strncpy(upperBits, variableAddressBinary + 16, 16);
+          strncpy(upperBits, variableAddressBinary, 16);
+          strncpy(lowerBits, variableAddressBinary + 16, 16);
           upperBits[16] = '\0';
           lowerBits[16] = '\0';
 
           // lui gets the lowerbits
-          int immediate = getDec(lowerBits);
+          int immediate = getDec(upperBits);
           iFormat("lui", "00000", "$at", immediate, outFile);
 
           // printing address to the file for visuals
           fprintf(outFile, "0x%x: ", programCounter + 4);
 
           // ori gets the upperbits
-          immediate = getDec(upperBits);
+          immediate = getDec(lowerBits);
           iFormat("ori", "$at", keys[0], immediate, outFile);
         }
       }
+      // if J format
       else if (instType == 'j')
       {
         char *key = parseInstruction(instructionSet, &instructionSet);
         int addressLabel = labelAddress(labels, key);
+        addressLabel >>= 2;
         jFormat(instruction, addressLabel, outFile);
         free(key);
       }
 
-      if (strcmp(instruction, "la") == 0)
+      if (strcmp(instruction, "syscall") == 0)
       {
-        programCounter += 8;
+        fprintf(outFile, "\t\t0x0000000C\n");
       }
+      if (strcmp(instruction, "la") == 0)
+        programCounter += 8;
       else
         programCounter += 4;
     }
