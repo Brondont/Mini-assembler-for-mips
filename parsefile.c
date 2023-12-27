@@ -97,7 +97,21 @@ char *parseInstruction(char *line, char **instructionSet)
 
   // point to the rest of the string
   if (j)
-    *instructionSet = strpbrk(j, "#.$,\"-0123456789 ");
+  {
+    char *rest = strpbrk(j, "#.$,\"-0123456789 ");
+    if (rest)
+    {
+      // remvoe leading white space
+      rest += strspn(rest, " ");
+      // remove ending white space
+      int i = strlen(rest) - 1;
+      while (i > 0 && (isspace(rest[i]) || rest[i] == '\n'))
+        i--;
+      rest[i + 1] = '\n';
+      rest[i + 2] = '\0';
+      *instructionSet = rest;
+    }
+  }
 
   // Create instruction string
   instructionLength = j - i;
@@ -314,7 +328,6 @@ void jFormat(char *instruction, int immediate, FILE *outFile)
 
 void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *status)
 {
-
   char line[MAX_LINE_LENGTH + 1];
   char *instruction = NULL;
   char *instructionSet = NULL;
@@ -423,13 +436,15 @@ void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *
         }
         else
         {
-          // is variable add it to the map
-          strncpy(labels[labelIndex].label, instruction, isLabel - instruction);
-          labels[labelIndex].address = programCounter;
           // extract directive from data label and size will be in instructionSet
           char *directive = parseInstruction(instructionSet, &instructionSet);
           if (strcmp(directive, ".word") == 0)
           {
+            // push program counter to point to the next 4 free bytes of memory
+            while (programCounter % 4 != 0)
+              programCounter++;
+            strncpy(labels[labelIndex].label, instruction, isLabel - instruction);
+            labels[labelIndex].address = programCounter;
             // increment program counter till we run out of .words (for arrays)
             while (instructionSet && parseInstruction(instructionSet, &instructionSet))
             {
@@ -438,9 +453,10 @@ void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *
           }
           else if (strcmp(directive, ".asciiz") == 0)
           {
-            char *data = parseInstruction(instructionSet, &instructionSet);
-            int size = strlen(data) - 2; // -3 for new line character and " " that are stored in instructionSet turns into -2 after adding in NULL character
-            programCounter += size + 1;
+            strncpy(labels[labelIndex].label, instruction, isLabel - instruction);
+            labels[labelIndex].address = programCounter;
+            int size = strlen(instructionSet) - 3 + 1; // -3 for new line character and " " that are stored in instructionSet turns into -2 after adding in NULL character
+            programCounter += size;
           }
           labelIndex++;
           // set end of array
@@ -571,7 +587,91 @@ void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *
             strcpy(keys[i], key);
             free(key);
           }
-          iFormat(instruction, keys[1], keys[0], atoi(keys[2]), outFile);
+          int32_t immediate = atoi(keys[2]);
+          if (strcmp(instruction, "slti") == 0)
+          {
+            iFormat(instruction, keys[1], keys[0], immediate, outFile);
+          }
+          else
+          {
+
+            if (immediate < 0)
+            {
+              // andi and ori have pseudo instruction for negative numbers
+              if (strcmp(instruction, "ori") == 0 || strcmp(instruction, "andi") == 0)
+              {
+                char upperBits[17];
+                char lowerBits[17];
+                char binaryImmediate[33];
+                getBin(immediate, binaryImmediate, 32);
+
+                strncpy(upperBits, binaryImmediate, 16);
+                strncpy(lowerBits, binaryImmediate + 16, 16);
+                upperBits[16] = '\0';
+                lowerBits[16] = '\0';
+
+                // lui gets upperbits
+                int immediate = getDec(upperBits);
+                iFormat("lui", "$at", "$at", immediate, outFile);
+
+                // printing address to the file for visuals
+                programCounter += 4;
+                fprintf(outFile, "0x%x: ", programCounter);
+
+                // ori gets the lower bits
+                immediate = getDec(lowerBits);
+                iFormat("ori", "$at", "$at", immediate, outFile);
+
+                programCounter += 4;
+                fprintf(outFile, "0x%x: ", programCounter);
+
+                // remove the i at the end of instruction
+                instruction[strlen(instruction) - 1] = '\0';
+                rFormat(instruction, keys[1], "$at", keys[0], 0, outFile);
+              }
+              else
+              {
+                iFormat(instruction, keys[1], keys[0], immediate, outFile);
+              }
+            }
+            // immediate is within the 16 bit range
+            else if (immediate <= 65535)
+            {
+              iFormat(instruction, keys[1], keys[0], immediate, outFile);
+            }
+            // immediate overflows the 16 bit range
+            else
+            {
+              char upperBits[17];
+              char lowerBits[17];
+              char binaryImmediate[33];
+              getBin(immediate, binaryImmediate, 32);
+              // seperate upper bits and lower bits
+              strncpy(upperBits, binaryImmediate, 16);
+              strncpy(lowerBits, binaryImmediate + 16, 16);
+              upperBits[16] = '\0';
+              lowerBits[16] = '\0';
+
+              // lui gets upperbits
+              int immediate = getDec(upperBits);
+              iFormat("lui", "$at", "$at", immediate, outFile);
+
+              // printing address to the file for visuals
+              programCounter += 4;
+              fprintf(outFile, "0x%x: ", programCounter);
+
+              // ori gets the lower bits
+              immediate = getDec(lowerBits);
+              iFormat("ori", "$at", "$at", immediate, outFile);
+
+              programCounter += 4;
+              fprintf(outFile, "0x%x: ", programCounter);
+
+              // remove the i at the end of instruction
+              instruction[strlen(instruction) - 1] = '\0';
+              rFormat(instruction, keys[1], "$at", keys[0], 0, outFile);
+            }
+          }
         }
         // type rt immediate rs
         else if (strcmp(instruction, "lw") == 0 || strcmp(instruction, "sw") == 0)
@@ -630,14 +730,14 @@ void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *
           upperBits[16] = '\0';
           lowerBits[16] = '\0';
 
-          // lui gets the lowerbits
+          // lui gets the upper bits
           int immediate = getDec(upperBits);
           iFormat("lui", "00000", "$at", immediate, outFile);
 
           // printing address to the file for visuals
           fprintf(outFile, "0x%x: ", programCounter + 4);
 
-          // ori gets the upperbits
+          // ori gets the lower bits
           immediate = getDec(lowerBits);
           iFormat("ori", "$at", keys[0], immediate, outFile);
         }
