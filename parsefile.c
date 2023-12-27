@@ -595,10 +595,15 @@ void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *
           else
           {
 
-            if (immediate < 0)
+            // immediate overflows the 16 bit range or negative immediate
+            if (immediate < 0 || immediate > 65535)
             {
-              // andi and ori have pseudo instruction for negative numbers
-              if (strcmp(instruction, "ori") == 0 || strcmp(instruction, "andi") == 0)
+              // andi translates directly if negative
+              if (immediate < 0 && strcmp(instruction, "addi") == 0)
+              {
+                iFormat(instruction, keys[1], keys[0], immediate, outFile);
+              }
+              else
               {
                 char upperBits[17];
                 char lowerBits[17];
@@ -612,7 +617,7 @@ void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *
 
                 // lui gets upperbits
                 int immediate = getDec(upperBits);
-                iFormat("lui", "$at", "$at", immediate, outFile);
+                iFormat("lui", NULL, "$at", immediate, outFile);
 
                 // printing address to the file for visuals
                 programCounter += 4;
@@ -629,47 +634,11 @@ void parseFile(FILE *file, FILE *outFile, int passTime, label labels[100], int *
                 instruction[strlen(instruction) - 1] = '\0';
                 rFormat(instruction, keys[1], "$at", keys[0], 0, outFile);
               }
-              else
-              {
-                iFormat(instruction, keys[1], keys[0], immediate, outFile);
-              }
             }
             // immediate is within the 16 bit range
-            else if (immediate <= 65535)
-            {
-              iFormat(instruction, keys[1], keys[0], immediate, outFile);
-            }
-            // immediate overflows the 16 bit range
             else
             {
-              char upperBits[17];
-              char lowerBits[17];
-              char binaryImmediate[33];
-              getBin(immediate, binaryImmediate, 32);
-              // seperate upper bits and lower bits
-              strncpy(upperBits, binaryImmediate, 16);
-              strncpy(lowerBits, binaryImmediate + 16, 16);
-              upperBits[16] = '\0';
-              lowerBits[16] = '\0';
-
-              // lui gets upperbits
-              int immediate = getDec(upperBits);
-              iFormat("lui", "$at", "$at", immediate, outFile);
-
-              // printing address to the file for visuals
-              programCounter += 4;
-              fprintf(outFile, "0x%x: ", programCounter);
-
-              // ori gets the lower bits
-              immediate = getDec(lowerBits);
-              iFormat("ori", "$at", "$at", immediate, outFile);
-
-              programCounter += 4;
-              fprintf(outFile, "0x%x: ", programCounter);
-
-              // remove the i at the end of instruction
-              instruction[strlen(instruction) - 1] = '\0';
-              rFormat(instruction, keys[1], "$at", keys[0], 0, outFile);
+              iFormat(instruction, keys[1], keys[0], immediate, outFile);
             }
           }
         }
