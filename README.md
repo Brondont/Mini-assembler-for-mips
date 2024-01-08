@@ -26,7 +26,7 @@ To run the code download the files from the repo and then in the command prompt
 execute "make" to compile the code (or compile it in any other way you know), after that
 run the code in this format ./main (mips filename).asm.
 
-# Sources:
+# Used sources:
 
 Got alot of help from this repo:
 https://github.com/nayefc/mips-assembler
